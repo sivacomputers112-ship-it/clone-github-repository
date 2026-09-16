@@ -8,7 +8,9 @@ The Cloudflare Worker is already deployed. Do not redeploy it unless the worker 
 
 ## Status
 
-A second install on the same laptop now kills the old Forge daemon/bridge and connects with the newest pairing code. Windows no longer uses `start /B` (that died with the command window). The installer starts detached processes and does not print success until ports 8473 and 18473 are listening.
+The installer now finds the coding CLI on the laptop (`claude`, then `codex`/`grok`). If Claude Code is missing and npm is available, it installs `@anthropic-ai/claude-code`. If the CLI is present but not logged in, the install output and the console both tell you to run `claude login`.
+
+The console no longer requires picking a project. It defaults to the laptop home directory with **Full access** (`bypassPermissions`) so the CLI can work across the machine.
 
 Done:
 
@@ -16,14 +18,17 @@ Done:
 - After the laptop is online, the pairing page opens `/console` automatically.
 - Console talks to the laptop daemon through `deviceRpc()` → `/d/<deviceId>/<path>` → the existing worker → the laptop bridge.
 - Re-running the install command replaces any leftover Forge process on that laptop.
+- Installer detects/installs the CLI and writes `claude_bin` / `providers` / `permission_mode=bypassPermissions` into `~/.agentremoted/config.json`.
+- Console shows a login banner when the CLI is missing or not signed in.
 
 Still on you:
 
 1. Open **https://clone-github-repository-olive.vercel.app**
-2. Click **New code** (the previous code was already claimed)
+2. Click **New code**
 3. Copy the new command and paste it in Command Prompt
-4. Wait until the page opens the console with **Online** and **Daemon ready**
-5. Pick a project, type a prompt, send
+4. If the installer says to log in, open a **new** Command Prompt and run `claude login`
+5. Wait until the page opens the console with **Online** and **Daemon ready**
+6. Type a prompt and send — no project picker required
 
 If it still sits on Claimed, read `%USERPROFILE%\.forge\bridge.log` and `%USERPROFILE%\.forge\daemon.log`.
 
@@ -37,30 +42,16 @@ Three pieces, no inbound laptop port:
 | --- | --- | --- |
 | Next.js app | Vercel, this repo | Pairing UI, console UI, API routes that proxy to the relay |
 | Cloudflare Worker | `worker/` (already deployed) | Durable Object per device; laptop WebSocket; RPC forward; D1 pairing/devices |
-| Laptop daemon + bridge | installed by `/install.py` | Runs agents locally; one outbound WebSocket to the worker |
-
-### Next.js routes
-
-- `POST /api/pair` — create a pairing code (worker `POST /v1/pairs`)
-- `GET /api/pair?code=` — poll pairing status
-- `GET\|DELETE /api/devices/[id]` — device status / remove
-- `app/d/[deviceId]/[...path]/route.ts` — catch-all RPC proxy (blocks `/internal`)
-- `/install`, `/install.cmd`, `/install.py` — installer scripts
-
-### Worker routes (`worker/src/index.ts`)
-
-- `POST /v1/pairs`, `POST /v1/pairs/claim`, `GET /v1/pairs/status`
-- `GET\|DELETE /v1/devices/<id>`, `POST /v1/devices/<id>/rpc`
-- `GET /v1/devices/<id>/connect` (WebSocket upgrade)
-- Durable Object `DeviceRelay`: `/connect`, `/status`, `/disconnect`, `/rpc`
+| Laptop daemon + bridge | installed by `/install.py` | Finds/runs the local CLI; one outbound WebSocket to the worker |
 
 ### Console → daemon
 
 `deviceRpc(deviceId, phoneSecret, path)` hits `/d/<deviceId>/<path>`:
 
-- `GET /api/ping`
+- `GET /api/ping` — providers + `auth` (`cli_on_path`, login status)
 - `GET /api/projects`
-- `POST /api/sessions/new {cwd, prompt, permission_mode?}`
+- `POST /api/shell` — used once to resolve the laptop home directory
+- `POST /api/sessions/new {cwd, prompt, provider, permission_mode}`
 - `POST /api/sessions/<id>/continue {prompt, permission_mode?}`
 - `GET /api/jobs/<id>?since=<seq>`
 - `POST /api/jobs/<id>/permission {request_id, allow}`
@@ -74,10 +65,3 @@ The bridge injects `X-Auth-Token` from `~/.agentremoted/token`. The browser only
 `ALLOWED_ORIGINS`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_WORKER_URL`, `D1_DATABASE_ID`, `DATABASE_NAME`, `WORKER_PROXY_SECRET`, `WORKERS_SUBDOMAIN`, plus `GITHUB_*` and `VERCEL_*`.
 
 Installer origin fallback lives in `lib/app-origin.ts` as `PUBLISHED_APP_ORIGIN`. Override with `NEXT_PUBLIC_APP_URL` / `APP_URL` if the Vercel hostname changes.
-
-### Pairing flow
-
-Browser `POST /api/pair` → worker `POST /v1/pairs` → `{code, phoneSecret}`.
-Laptop install `POST /api/pair/claim` → worker creates the device → `{deviceId, deviceToken, workerWebSocketUrl}`.
-Bridge connects to `wss://…/v1/devices/<id>/connect?token=…`.
-Console RPC: `/d/<id>/<path>` → worker `/v1/devices/<id>/rpc` → Durable Object → bridge → `127.0.0.1:8473`.

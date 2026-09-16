@@ -1,3 +1,12 @@
+export type AuthHealth = {
+  cli?: string
+  cli_on_path?: boolean
+  mode?: string
+  status?: string
+  detail?: string
+  by_provider?: Record<string, AuthHealth>
+}
+
 export type PingResponse = {
   ok?: boolean
   host?: string
@@ -5,8 +14,8 @@ export type PingResponse = {
   providers?: string[]
   multi?: boolean
   caps?: Record<string, boolean | string | number>
-  auth?: { status?: string; detail?: string; cli?: string }
-  provider_details?: Record<string, { auth?: { status?: string; detail?: string } }>
+  auth?: AuthHealth
+  provider_details?: Record<string, { auth?: AuthHealth }>
 }
 
 export type Project = {
@@ -75,10 +84,10 @@ export type JobSnapshot = {
 }
 
 export const PERMISSION_MODES = [
-  { id: '', label: 'Default' },
+  { id: 'bypassPermissions', label: 'Full access' },
   { id: 'acceptEdits', label: 'Accept edits' },
   { id: 'plan', label: 'Plan' },
-  { id: 'bypassPermissions', label: 'Bypass' },
+  { id: '', label: 'Ask each time' },
 ] as const
 
 export function jobIsActive(status?: string) {
@@ -91,4 +100,35 @@ export function questionLabel(question: DaemonQuestion) {
 
 export function optionLabel(option: QuestionOption | string) {
   return typeof option === 'string' ? option : option.label || 'Option'
+}
+
+export function pingProviders(ping: PingResponse | null) {
+  if (ping?.providers?.length) return ping.providers
+  return ping?.provider ? [ping.provider] : []
+}
+
+export function providerAuth(ping: PingResponse | null, name: string): AuthHealth | undefined {
+  return ping?.provider_details?.[name]?.auth || (ping?.auth?.cli === name ? ping.auth : ping?.auth)
+}
+
+export function pickReadyProvider(ping: PingResponse | null) {
+  const names = pingProviders(ping)
+  const ready = names.find((name) => providerAuth(ping, name)?.status === 'ok')
+  if (ready) return ready
+  const installed = names.find((name) => providerAuth(ping, name)?.cli_on_path)
+  return installed || names[0] || ''
+}
+
+export function cliSetupMessage(ping: PingResponse | null, provider: string) {
+  const auth = providerAuth(ping, provider) || ping?.auth
+  if (!auth) return ''
+  const cli = auth.cli || provider || 'claude'
+  if (auth.status === 'ok') return ''
+  if (!auth.cli_on_path) {
+    return `${cli} is not installed on this laptop. Re-run the Forge install command, or install the CLI and run \`${cli} login\` in Command Prompt.`
+  }
+  if (auth.status === 'missing' || auth.status === 'expired') {
+    return `On the laptop, open Command Prompt and run \`${cli} login\`. Then send a prompt here.`
+  }
+  return auth.detail || ''
 }

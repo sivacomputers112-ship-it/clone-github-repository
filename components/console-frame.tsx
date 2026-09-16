@@ -12,8 +12,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
   PERMISSION_MODES,
+  cliSetupMessage,
   jobIsActive,
   optionLabel,
+  pickReadyProvider,
+  pingProviders,
   questionLabel,
   type DaemonQuestion,
   type JobEvent,
@@ -50,7 +53,8 @@ export function ConsoleFrame() {
   const [projects, setProjects] = useState<Project[]>([])
   const [cwd, setCwd] = useState('')
   const [provider, setProvider] = useState('')
-  const [permissionMode, setPermissionMode] = useState('')
+  const [permissionMode, setPermissionMode] = useState('bypassPermissions')
+  const [cliMessage, setCliMessage] = useState('')
   const [sessionId, setSessionId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
@@ -120,13 +124,25 @@ export function ConsoleFrame() {
         const nextPing = await deviceRpc<PingResponse>(deviceId, phoneSecret, '/api/ping')
         if (cancelled) return
         setPing(nextPing)
-        const providers = nextPing.providers?.length ? nextPing.providers : nextPing.provider ? [nextPing.provider] : []
-        setProvider((current) => current || providers[0] || '')
+        const nextProvider = pickReadyProvider(nextPing)
+        const chosenProvider = readConsolePrefs().provider || nextProvider
+        setProvider((current) => current || nextProvider)
+        setCliMessage(cliSetupMessage(nextPing, chosenProvider))
         const projectData = await deviceRpc<{ projects?: Project[] }>(deviceId, phoneSecret, '/api/projects')
         if (cancelled) return
-        const nextProjects = projectData.projects ?? []
+        const home = await resolveLaptopHome(deviceId, phoneSecret)
+        if (cancelled) return
+        const listed = projectData.projects ?? []
+        const machine: Project = {
+          id: 'laptop-home',
+          cwd: home,
+          name: 'This laptop',
+        }
+        const nextProjects = home
+          ? [machine, ...listed.filter((project) => normalizePath(project.cwd) !== normalizePath(home))]
+          : listed
         setProjects(nextProjects)
-        setCwd((current) => current || nextProjects[0]?.cwd || '')
+        setCwd((current) => current || home || nextProjects[0]?.cwd || '')
         setError('')
       } catch (cause) {
         if (!cancelled) {
@@ -199,8 +215,14 @@ export function ConsoleFrame() {
       setError('The laptop is online, but the local agent daemon did not answer. Re-run the install command so the daemon and bridge restart.')
       return
     }
-    if (!cwd.trim()) {
-      setError('Pick a project or enter a working directory.')
+    const workingDir = cwd.trim()
+    if (!workingDir) {
+      setError('The laptop home directory is not available yet. Wait for Daemon ready, then send again.')
+      return
+    }
+    const activeProvider = provider || pickReadyProvider(ping)
+    if (!activeProvider) {
+      setError('No coding CLI is available on this laptop yet. Re-run the install command, then run `claude login`.')
       return
     }
     setSending(true)
@@ -209,17 +231,17 @@ export function ConsoleFrame() {
     try {
       const body: Record<string, string> = {
         prompt: text,
-        cwd,
-        permission_mode: permissionMode,
+        cwd: workingDir,
+        permission_mode: permissionMode || 'bypassPermissions',
+        provider: activeProvider,
       }
-      if (provider) body.provider = provider
       let result: { job_id?: string }
       if (sessionId) {
         result = await deviceRpc<{ job_id?: string }>(
           deviceId,
           phoneSecret,
           `/api/sessions/${encodeURIComponent(sessionId)}/continue`,
-          { method: 'POST', body: JSON.stringify({ prompt: text, permission_mode: permissionMode }) },
+          { method: 'POST', body: JSON.stringify({ prompt: text, permission_mode: permissionMode || 'bypassPermissions' }) },
         )
       } else {
         result = await deviceRpc<{ job_id?: string }>(deviceId, phoneSecret, '/api/sessions/new', {
@@ -238,7 +260,12 @@ export function ConsoleFrame() {
         try {
           const retry = await deviceRpc<{ job_id?: string }>(deviceId, phoneSecret, '/api/sessions/new', {
             method: 'POST',
-            body: JSON.stringify({ prompt: text, cwd, permission_mode: permissionMode, provider }),
+            body: JSON.stringify({
+              prompt: text,
+              cwd: workingDir,
+              permission_mode: permissionMode || 'bypassPermissions',
+              provider: activeProvider,
+            }),
           })
           if (!retry.job_id) throw new Error('The daemon did not return a job id.')
           setPrompt('')
@@ -364,12 +391,14 @@ export function ConsoleFrame() {
 
   const running = jobIsActive(job?.status)
   const working = sending || running || Boolean(jobId && (!job || jobIsActive(job.status)))
-  const providers = ping?.providers?.length ? ping.providers : ping?.provider ? [ping.provider] : []
+  const providers = pingProviders(ping)
   const emptyHint = !online
     ? 'Laptop is offline. Keep this tab open and the Forge bridge running on that machine.'
     : !daemonOnline
       ? 'Bridge is connected, but the local agent daemon is not ready yet. Re-run the install command if this stays unavailable.'
-      : 'Pick a project, type a prompt, and send it. The request goes through the Cloudflare relay to the agent on your laptop.'
+      : cliMessage
+        ? cliMessage
+        : 'Type a prompt and send it. The CLI on this laptop can work across the whole machine.'
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -412,7 +441,6 @@ export function ConsoleFrame() {
               writeConsolePrefs({ cwd: next, provider, sessionId: '' })
             }}
           >
-            <option value="">Choose a directory</option>
             {projects.map((project) => (
               <option key={project.id} value={project.cwd}>
                 {project.name} {project.cwd ? `— ${project.cwd}` : ''}
@@ -420,15 +448,16 @@ export function ConsoleFrame() {
             ))}
           </select>
         </label>
-        {providers.length > 1 ? (
+        {providers.length ? (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="uppercase tracking-wide">Agent</span>
+            <span className="uppercase tracking-wide">CLI</span>
             <select
               className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-foreground"
               value={provider}
               onChange={(event) => {
                 const next = event.target.value
                 setProvider(next)
+                setCliMessage(cliSetupMessage(ping, next))
                 writeConsolePrefs({ cwd, provider: next, sessionId })
               }}
             >
@@ -463,11 +492,14 @@ export function ConsoleFrame() {
         <Input
           value={cwd}
           onChange={(event) => setCwd(event.target.value)}
-          placeholder="Working directory on the laptop"
+          placeholder="Laptop working directory (defaults to the whole user profile)"
           aria-label="Working directory"
           className="font-mono text-xs"
         />
       </div>
+      {cliMessage ? (
+        <p className="border-b border-foreground/10 px-4 py-2 text-sm text-destructive">{cliMessage}</p>
+      ) : null}
 
       <div ref={transcriptRef} className="min-h-0 flex-1 overflow-y-auto">
         <ConsoleTranscript events={events} emptyHint={emptyHint} />
@@ -551,7 +583,7 @@ export function ConsoleFrame() {
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Enter to send, Shift+Enter for a new line. Prompts go through the existing Cloudflare relay to the laptop agent.
+          Enter to send, Shift+Enter for a new line. The laptop CLI receives the prompt and can work anywhere on this machine.
         </p>
       </form>
     </div>
@@ -568,4 +600,41 @@ function mergeEvents(current: JobEvent[], incoming: JobEvent[]) {
     next.push(event)
   }
   return next
+}
+
+function normalizePath(value: string) {
+  return value.replace(/[\\/]+$/, '').toLowerCase()
+}
+
+function looksLikeHome(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  if (/error|traceback|not recognized|cannot find/i.test(trimmed)) return false
+  return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)
+}
+
+async function resolveLaptopHome(deviceId: string, phoneSecret: string) {
+  const commands = [
+    'python -c "import os; print(os.path.expanduser(chr(126)))"',
+    'py -3 -c "import os; print(os.path.expanduser(chr(126)))"',
+    'echo %USERPROFILE%',
+    'printf %s "$HOME"',
+  ]
+  for (const command of commands) {
+    try {
+      const result = await deviceRpc<{ output?: string }>(deviceId, phoneSecret, '/api/shell', {
+        method: 'POST',
+        body: JSON.stringify({ command }),
+      })
+      const line = (result.output || '')
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .pop()
+      if (line && looksLikeHome(line)) return line
+    } catch {
+      // Try the next home-detection command.
+    }
+  }
+  return ''
 }

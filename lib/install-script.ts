@@ -247,7 +247,98 @@ def install_daemon():
     run(["git", "-C", str(AGENT_HOME), "checkout", "--detach", DAEMON_COMMIT])
 
 
-def configure_daemon():
+def which_cli(name):
+    found = shutil.which(name) or shutil.which(name + ".cmd") or shutil.which(name + ".exe")
+    if found:
+        return found
+    home = Path.home()
+    appdata = Path(os.environ.get("APPDATA") or (home / "AppData/Roaming"))
+    local = Path(os.environ.get("LOCALAPPDATA") or (home / "AppData/Local"))
+    candidates = [
+        home / ".local/bin" / name,
+        appdata / "npm" / (name + ".cmd"),
+        appdata / "npm" / (name + ".exe"),
+        local / "Programs" / name / (name + ".exe"),
+        local / "npm" / (name + ".cmd"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def npm_cmd():
+    return shutil.which("npm") or shutil.which("npm.cmd") or ""
+
+
+def extra_path():
+    parts = []
+    npm = npm_cmd()
+    if npm:
+        try:
+            output = subprocess.check_output([npm, "bin", "-g"], text=True, errors="ignore", timeout=20)
+            line = output.strip().splitlines()[-1].strip() if output.strip() else ""
+            if line:
+                parts.append(line)
+        except Exception:
+            pass
+    home = Path.home()
+    parts.append(str(home / ".local/bin"))
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        parts.append(str(Path(appdata) / "npm"))
+    return os.pathsep.join(part for part in parts if part)
+
+
+def claude_logged_in():
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return True
+    creds = Path.home() / ".claude" / ".credentials.json"
+    if creds.exists():
+        return True
+    claude_json = Path.home() / ".claude.json"
+    return claude_json.exists()
+
+
+def install_claude():
+    npm = npm_cmd()
+    if not npm:
+        print("Node/npm was not found, so Claude Code could not be installed automatically.")
+        print("Install Claude Code, then run: claude login")
+        return ""
+    print("Claude CLI not found. Installing @anthropic-ai/claude-code...")
+    try:
+        subprocess.run([npm, "install", "-g", "@anthropic-ai/claude-code"], check=True, timeout=240)
+    except Exception as error:
+        print("Automatic Claude install failed: " + str(error))
+        print("Install Claude Code yourself, then run: claude login")
+        return ""
+    return which_cli("claude")
+
+
+def prepare_cli():
+    found = {}
+    for name in ("claude", "codex", "grok"):
+        path = which_cli(name)
+        if path:
+            found[name] = path
+            print("Found " + name + " CLI: " + path)
+    if "claude" not in found:
+        installed = install_claude()
+        if installed:
+            found["claude"] = installed
+            print("Installed Claude Code CLI: " + installed)
+    if not found:
+        print("No coding CLI is available yet. Forge will still connect.")
+        print("After Claude Code is installed, run: claude login")
+    elif "claude" in found and not claude_logged_in():
+        print("Claude CLI is installed but not logged in.")
+        print("Open a new Command Prompt and run: claude login")
+        print("Then return to the Forge tab and send a prompt.")
+    return found
+
+
+def configure_daemon(found):
     daemon_home = Path.home() / ".agentremoted"
     daemon_home.mkdir(parents=True, exist_ok=True)
     config_path = daemon_home / "config.json"
@@ -255,7 +346,21 @@ def configure_daemon():
         config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     except (OSError, ValueError):
         config = {}
-    config.update({"bind": "127.0.0.1", "port": DAEMON_PORT})
+    names = list(found.keys()) or ["claude"]
+    config.update({
+        "bind": "127.0.0.1",
+        "port": DAEMON_PORT,
+        "providers": names,
+        "provider": names[0],
+        "permission_mode": "bypassPermissions",
+        "codex_sandbox": "danger-full-access",
+    })
+    if found.get("claude"):
+        config["claude_bin"] = found["claude"]
+    if found.get("codex"):
+        config["codex_bin"] = found["codex"]
+    if found.get("grok"):
+        config["grok_bin"] = found["grok"]
     config_path.write_text(json.dumps(config, indent=2) + "\\n", encoding="utf-8")
 
 
@@ -286,6 +391,9 @@ def spawn_detached(command, logfile, env=None):
 def daemon_env():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(AGENT_HOME / "daemon")
+    extra = extra_path()
+    if extra:
+        env["PATH"] = extra + os.pathsep + env.get("PATH", "")
     return env
 
 
@@ -324,15 +432,20 @@ def write_windows_autostart(python_executable):
     python = str(python_executable)
     bridge_py = str(FORGE_HOME / "bridge.py")
     daemon_path = str(AGENT_HOME / "daemon")
+    extra = extra_path()
     vbs = FORGE_HOME / "start.vbs"
     lines = [
         'Set sh = CreateObject("Wscript.Shell")',
         'sh.Environment("Process")("PYTHONPATH") = "' + daemon_path + '"',
+    ]
+    if extra:
+        lines.append('sh.Environment("Process")("PATH") = "' + extra + ';" & sh.Environment("Process")("PATH")')
+    lines.extend([
         'sh.Run """' + python + '"" -m agentremoted --bind 127.0.0.1 --port 8473", 0, False',
         'WScript.Sleep 2500',
         'sh.Run """' + python + '"" """' + bridge_py + '""", 0, False',
         '',
-    ]
+    ])
     vbs.write_text("\\r\\n".join(lines), encoding="utf-8")
     start_path = FORGE_HOME / "start.cmd"
     start_path.write_text("@echo off\\r\\nwscript.exe \\"" + str(vbs) + "\\"\\r\\n", encoding="utf-8")
@@ -346,9 +459,11 @@ def write_windows_autostart(python_executable):
 
 def write_unix_autostart(python_executable):
     start_path = FORGE_HOME / "start.sh"
+    extra = extra_path()
     start_path.write_text(
         "#!/usr/bin/env bash\\n"
         + "export PYTHONPATH=" + shell_quote(str(AGENT_HOME / "daemon")) + "\\n"
+        + (("export PATH=" + shell_quote(extra) + ":$PATH\\n") if extra else "")
         + "if ! curl -fsS http://127.0.0.1:8473/api/ping >/dev/null 2>&1; then\\n"
         + "  " + shell_quote(python_executable) + " -m agentremoted --bind 127.0.0.1 --port 8473 >> " + shell_quote(str(FORGE_HOME / "daemon.log")) + " 2>&1 &\\n"
         + "  sleep 2\\n"
@@ -395,9 +510,11 @@ def main():
     python = str(venv_python())
     run([python, "-m", "pip", "install", "--disable-pip-version-check", "--quiet", "websocket-client==1.8.0"])
     download("/bridge.py", FORGE_HOME / "bridge.py")
+    print("Looking for the coding CLI on this laptop...")
+    found = prepare_cli()
     print("Installing pinned local daemon...")
     install_daemon()
-    configure_daemon()
+    configure_daemon(found)
     print("Claiming pairing code...")
     credentials = claim(code)
     ws_url = str(credentials.get("workerWebSocketUrl") or "")
@@ -421,6 +538,10 @@ def main():
         elif not wait_port(BRIDGE_LOCK_PORT, 25):
             start_processes(python)
     print("Forge is installed and connected. You can close this window.")
+    if not found:
+        print("Next: install Claude Code, run: claude login")
+    elif "claude" in found and not claude_logged_in():
+        print("Next: open a new Command Prompt and run: claude login")
     print("Logs: " + str(FORGE_HOME / "bridge.log"))
 
 
