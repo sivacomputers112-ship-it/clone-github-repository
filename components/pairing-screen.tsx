@@ -7,9 +7,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { PUBLISHED_APP_ORIGIN, isPrivateHost } from '@/lib/app-origin'
 
 const SESSION_KEY = 'forge.v1'
-const APP_ORIGIN_OVERRIDE = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, '')
+const APP_ORIGIN_OVERRIDE = (process.env.NEXT_PUBLIC_APP_URL || PUBLISHED_APP_ORIGIN).replace(/\/+$/, '')
 
 type LaptopPlatform = 'windows' | 'unix'
 type PairStatus = 'loading' | 'waiting' | 'claimed' | 'online' | 'expired' | 'error'
@@ -30,22 +31,6 @@ type WorkerDevice = {
   daemonOnline?: boolean
 }
 
-function isPrivateOrigin(origin: string) {
-  try {
-    const { hostname } = new URL(origin)
-    return (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.endsWith('.local') ||
-      hostname.endsWith('.v0.build') ||
-      hostname.endsWith('.v0.app') ||
-      hostname.endsWith('.vercel.run')
-    )
-  } catch {
-    return true
-  }
-}
-
 export function PairingScreen() {
   const router = useRouter()
   const [session, setSession] = useState<PairSession | null>(null)
@@ -56,7 +41,7 @@ export function PairingScreen() {
   const [platform, setPlatform] = useState<LaptopPlatform>('unix')
 
   useEffect(() => {
-    setAppOrigin(APP_ORIGIN_OVERRIDE || window.location.origin)
+    setAppOrigin(APP_ORIGIN_OVERRIDE)
     setPlatform(/Windows/i.test(navigator.userAgent) ? 'windows' : 'unix')
     const existing = readSession()
     if (existing?.code && existing.phoneSecret && !isSessionExpired(existing)) {
@@ -183,7 +168,7 @@ export function PairingScreen() {
   }
 
   const connected = status === 'online'
-  const privateOrigin = Boolean(appOrigin) && isPrivateOrigin(appOrigin)
+  const privateOrigin = Boolean(appOrigin) && isPrivateHost(originHost(appOrigin))
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col justify-center gap-8 px-6 py-10">
@@ -244,6 +229,9 @@ export function PairingScreen() {
         <pre className="overflow-x-auto rounded-xl bg-card p-4 font-mono text-[12px] leading-relaxed text-foreground ring-1 ring-foreground/10">
           <code>{command || 'Creating pairing code…'}</code>
         </pre>
+        <p className="text-xs text-muted-foreground">
+          The laptop command always uses {PUBLISHED_APP_ORIGIN.replace('https://', '')} so install and claim work from a public HTTPS origin.
+        </p>
       </section>
 
       <ol className="flex flex-col gap-0">
@@ -275,7 +263,7 @@ export function PairingScreen() {
       ) : (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           {status === 'waiting' || status === 'claimed' ? <Spinner /> : <TerminalIcon />}
-          The connected state confirms the production relay path.
+          Waiting for the laptop to claim this code.
         </p>
       )}
     </main>
@@ -299,6 +287,14 @@ function Step({ n, children, done, active, highlight }: { n: number; children: R
       <span className={highlight && active && !done ? 'text-sm text-foreground' : 'text-sm text-muted-foreground'}>{children}</span>
     </li>
   )
+}
+
+function originHost(origin: string) {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return ''
+  }
 }
 
 function isSessionExpired(session: PairSession) {

@@ -1,3 +1,4 @@
+import { PUBLISHED_APP_ORIGIN } from '@/lib/app-origin'
 import { json } from '@/lib/http'
 
 const PHONE_SECRET_HEADER = 'x-forge-phone-secret'
@@ -14,7 +15,7 @@ function allowedOrigins(request: Request) {
   const requestUrl = new URL(request.url)
   const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
   const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || 'https'
-  const origins = new Set<string>([requestUrl.origin])
+  const origins = new Set<string>([requestUrl.origin, PUBLISHED_APP_ORIGIN])
   if (forwardedHost) origins.add(`${forwardedProto}://${forwardedHost}`)
   for (const extra of (process.env.ALLOWED_ORIGINS ?? '').split(',')) {
     const trimmed = extra.trim().replace(/\/+$/, '')
