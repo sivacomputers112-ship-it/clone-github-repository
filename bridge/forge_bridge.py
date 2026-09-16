@@ -26,6 +26,7 @@ MAX_RESPONSE_BYTES = 25 * 1024 * 1024
 CHUNK_BYTES = 16 * 1024
 CONNECT_TIMEOUT_S = 3
 READ_TIMEOUT_S = 300
+LOCK_PORT = 18473
 HOP_HEADERS = {
     "connection",
     "content-length",
@@ -51,6 +52,18 @@ def load_config():
     if any(not config.get(key) for key in required):
         raise SystemExit("Forge config is incomplete; pair this laptop again")
     return config
+
+
+def websocket_url(config):
+    url = str(config["workerWebSocketUrl"])
+    token = str(config["deviceToken"])
+    parsed = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    if not query.get("token") and token:
+        query["token"] = [token]
+    encoded = urllib.parse.urlencode({key: values[-1] for key, values in query.items()})
+    scheme = parsed.scheme if parsed.scheme in {"ws", "wss"} else ("wss" if parsed.scheme == "https" else "ws")
+    return urllib.parse.urlunsplit((scheme, parsed.netloc, parsed.path, encoded, ""))
 
 
 def daemon_token():
@@ -81,7 +94,7 @@ def daemon_online(config):
 
 
 def daemon_headers():
-    headers = {"User-Agent": "forge-bridge/3.1", "Connection": "close"}
+    headers = {"User-Agent": "forge-bridge/3.2", "Connection": "close"}
     token = daemon_token()
     if token:
         headers["X-Auth-Token"] = token
@@ -190,9 +203,10 @@ class Bridge:
 
     def run(self):
         delay = 1
+        url = websocket_url(self.config)
         while True:
             app = websocket.WebSocketApp(
-                self.config["workerWebSocketUrl"],
+                url,
                 on_open=self.on_open,
                 on_message=self.on_message,
                 on_error=self.on_error,
@@ -204,13 +218,19 @@ class Bridge:
 
 
 def acquire_single_instance():
-    lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        lock.bind(("127.0.0.1", 18473))
-        lock.listen(1)
-        return lock
-    except OSError:
-        raise SystemExit("Forge bridge is already running")
+    deadline = time.time() + 12
+    while True:
+        lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            lock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            lock.bind(("127.0.0.1", LOCK_PORT))
+            lock.listen(1)
+            return lock
+        except OSError:
+            lock.close()
+            if time.time() >= deadline:
+                raise SystemExit("Forge bridge is already running")
+            time.sleep(0.4)
 
 
 def main():

@@ -8,23 +8,24 @@ The Cloudflare Worker is already deployed. Do not redeploy it unless the worker 
 
 ## Status
 
+A second install on the same laptop now kills the old Forge daemon/bridge and connects with the newest pairing code. Windows no longer uses `start /B` (that died with the command window). The installer starts detached processes and does not print success until ports 8473 and 18473 are listening.
+
 Done:
 
 - Pairing UI at `/` issues a 10-minute code and shows a public install command against `https://clone-github-repository-olive.vercel.app`.
-- Installer scripts (`/install`, `/install.cmd`, `/install.py`) embed that public origin when the request comes from a private v0 preview.
-- Console at `/console` is a real prompt UI. It talks to the laptop daemon through `deviceRpc()` → `/d/<deviceId>/<path>` → the existing worker → the laptop bridge. The iframe `/ar/index.html` client is gone.
-- Connection badges show laptop **Online/Offline** and **Daemon ready/unavailable**.
-- Prompts start `POST /api/sessions/new` (or `/continue`), then poll `GET /api/jobs/<id>?since=`. Permission and AskUserQuestion gates are answered from the console.
-- Worker RPC already waits for `rpc_accepted` (`ACCEPT_TIMEOUT_MS = 45s`, `DAEMON_TIMEOUT_MS = 120s`).
+- After the laptop is online, the pairing page opens `/console` automatically.
+- Console talks to the laptop daemon through `deviceRpc()` → `/d/<deviceId>/<path>` → the existing worker → the laptop bridge.
+- Re-running the install command replaces any leftover Forge process on that laptop.
 
 Still on you:
 
 1. Open **https://clone-github-repository-olive.vercel.app**
-2. Copy the install command and run it on the laptop
-3. Wait until the console shows **Online** and **Daemon ready**
-4. Pick a project, type a prompt, send
+2. Click **New code** (the previous code was already claimed)
+3. Copy the new command and paste it in Command Prompt
+4. Wait until the page opens the console with **Online** and **Daemon ready**
+5. Pick a project, type a prompt, send
 
-If the laptop is Online but the daemon stays unavailable, re-run the install command so `agentremoted` and `forge_bridge.py` both start.
+If it still sits on Claimed, read `%USERPROFILE%\.forge\bridge.log` and `%USERPROFILE%\.forge\daemon.log`.
 
 ---
 

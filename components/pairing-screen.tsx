@@ -53,6 +53,12 @@ export function PairingScreen() {
   }, [])
 
   useEffect(() => {
+    if (status === 'online' && session?.deviceId) {
+      router.push('/console')
+    }
+  }, [status, session?.deviceId, router])
+
+  useEffect(() => {
     if (!session?.code || !session.phoneSecret) return
     let cancelled = false
 
@@ -241,7 +247,11 @@ export function PairingScreen() {
           {platform === 'windows' ? 'Paste it in Command Prompt (cmd.exe)' : 'Paste it in a laptop terminal'}
         </Step>
         <Step n={4} done={connected} active={status === 'claimed' || status === 'waiting'} highlight>
-          {connected ? `Laptop online${session?.hostname ? ` · ${session.hostname}` : ''}` : status === 'claimed' ? 'Code claimed — waiting for the bridge' : 'The laptop will connect outbound automatically'}
+          {connected
+            ? `Laptop online${session?.hostname ? ` · ${session.hostname}` : ''}`
+            : status === 'claimed'
+              ? 'Code claimed — starting the laptop bridge'
+              : 'The laptop will connect outbound automatically'}
         </Step>
       </ol>
 
@@ -263,7 +273,9 @@ export function PairingScreen() {
       ) : (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           {status === 'waiting' || status === 'claimed' ? <Spinner /> : <TerminalIcon />}
-          Waiting for the laptop to claim this code.
+          {status === 'claimed'
+            ? 'Keep this tab open. The latest install on this laptop replaces any old Forge process.'
+            : 'Waiting for the laptop to claim this code.'}
         </p>
       )}
     </main>
