@@ -237,7 +237,7 @@ function PixelComputer({ step, onMouseClick }: { step: number; onMouseClick: () 
           {step === 0 ? <><div className="pixel-window"><span /> <span /> <span /></div><div className="pixel-prompt">CLICK TO BOOT_</div></> : step === 1 ? <><div className="pixel-terminal-line">SELECT YOUR DRIVER</div><div className="pixel-cli-mark">{step === 1 ? 'FORGE / CLI' : ''}</div></> : <><div className="pixel-terminal-line">LINK READY</div><div className="pixel-code-line">{`> ${'pair --secure'}`}</div></>}
         </div>
         <div className="pixel-monitor-controls"><span /><span /><span /></div>
-+      </div>
+      </div>
       <div className="pixel-monitor-neck" />
       <div className="pixel-monitor-base" />
       <div className="pixel-keyboard"><span /><span /><span /><span /><span /><span /><span /><span /></div>
