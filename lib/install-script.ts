@@ -57,19 +57,19 @@ export function pythonInstallScript(origin: string) {
   return `#!/usr/bin/env python3
 from __future__ import annotations
 
-	import hashlib
-	import json
-	import os
-	import platform
-	import shutil
-	import socket
-	import subprocess
-	import sys
-	import time
-	import urllib.error
-	import urllib.parse
-	import urllib.request
-	from pathlib import Path
+import hashlib
+import json
+import os
+import platform
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
 
 ORIGIN = ${JSON.stringify(safeOrigin)}
 DAEMON_REPOSITORY = "https://github.com/jxw1102/agent-remote.git"
