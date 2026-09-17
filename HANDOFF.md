@@ -20,10 +20,9 @@ Done:
 - After the laptop is online, the pairing page opens `/console` automatically.
 - Console talks to the laptop daemon through `deviceRpc()` → `/d/<deviceId>/<path>` → the existing worker → the laptop bridge.
 - Re-running the install command replaces any leftover Forge process on that laptop.
-- Installer installs Antigravity first (official script, then Forge-proxied GCS binary if Cloud Run DNS fails), then Claude Code as fallback.
-- Detected CLI paths are written into `~/.agentremoted/config.json` with `provider=antigravity` when `agy` is present.
-- After cloning Agent Remote, the installer overlays a Windows CLI launcher (fixes `WinError 2` on `claude.cmd`) plus Cursor/Antigravity providers.
-- Console shows a login banner when the selected CLI is missing or not signed in.
+- Installer skips Google's broken `install.cmd` (Cloud Run DNS) and downloads `agy.exe` through Forge into `%LOCALAPPDATA%\\agy\\bin\\agy.exe`.
+- Daemon always registers Antigravity, Claude, Cursor, and Codex. Send re-pings, refreshes CLI paths, then launches the first CLI that can start. If Antigravity is missing it tries Claude, then Cursor, then Codex.
+- Job progress polls every 250ms.
 
 Still on you:
 

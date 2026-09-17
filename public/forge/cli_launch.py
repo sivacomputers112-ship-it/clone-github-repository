@@ -88,6 +88,30 @@ def _which(name, env=None):
     return ""
 
 
+def refresh_cli_bins(config):
+    if config is None:
+        return
+    mapping = (
+        ("agy_bin", ("agy", "antigravity")),
+        ("claude_bin", ("claude",)),
+        ("cursor_bin", ("agent", "cursor-agent")),
+        ("codex_bin", ("codex",)),
+        ("grok_bin", ("grok",)),
+    )
+    for attr, aliases in mapping:
+        current = str(getattr(config, attr, "") or "")
+        if current and os.path.isfile(current):
+            continue
+        for alias in aliases:
+            found = resolve_bin(alias)
+            if found:
+                try:
+                    setattr(config, attr, found)
+                except Exception:
+                    pass
+                break
+
+
 def resolve_bin(name, env=None):
     raw = str(name or "").strip().strip('"')
     if not raw:

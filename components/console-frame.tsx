@@ -18,6 +18,7 @@ import {
   pickReadyProvider,
   pingProviders,
   providerLabel,
+  readyProviders,
   questionLabel,
   type DaemonQuestion,
   type JobEvent,
@@ -194,7 +195,7 @@ export function ConsoleFrame() {
         }
       }
     }
-    timer = window.setInterval(() => void tick(), 900)
+    timer = window.setInterval(() => void tick(), 250)
     void tick()
     return stop
   }, [cwd, deviceId, jobId, phoneSecret, provider])
@@ -221,67 +222,70 @@ export function ConsoleFrame() {
       setError('The laptop home directory is not available yet. Wait for Daemon ready, then send again.')
       return
     }
-    const activeProvider = provider || pickReadyProvider(ping)
-    if (!activeProvider) {
-      setError('No coding CLI is available on this laptop yet. Re-run the install command after Claude Code, Cursor, Antigravity, or Codex is installed.')
-      return
-    }
     setSending(true)
     setError('')
     setEvents((current) => [...current, { seq: -Date.now(), kind: 'user', text }])
     try {
-      const body: Record<string, string> = {
-        prompt: text,
-        cwd: workingDir,
-        permission_mode: permissionMode || 'bypassPermissions',
-        provider: activeProvider,
+      let nextPing = ping
+      try {
+        nextPing = await deviceRpc<PingResponse>(deviceId, phoneSecret, '/api/ping')
+        setPing(nextPing)
+      } catch {
+        // Use the last ping if a fresh scan fails.
       }
-      let result: { job_id?: string }
-      if (sessionId) {
-        result = await deviceRpc<{ job_id?: string }>(
-          deviceId,
-          phoneSecret,
-          `/api/sessions/${encodeURIComponent(sessionId)}/continue`,
-          { method: 'POST', body: JSON.stringify({ prompt: text, permission_mode: permissionMode || 'bypassPermissions' }) },
-        )
-      } else {
-        result = await deviceRpc<{ job_id?: string }>(deviceId, phoneSecret, '/api/sessions/new', {
-          method: 'POST',
-          body: JSON.stringify(body),
-        })
+      const candidates = readyProviders(nextPing)
+      const selected = provider && candidates.includes(provider) ? provider : pickReadyProvider(nextPing)
+      const queue = selected
+        ? [selected, ...candidates.filter((name) => name !== selected)]
+        : candidates
+      if (!queue.length) {
+        setError('No coding CLI is available on this laptop yet. Re-run pairing so Forge can install Antigravity.')
+        return
       }
-      if (!result.job_id) throw new Error('The daemon did not return a job id.')
-      setPrompt('')
-      seqRef.current = 0
-      setJob(null)
-      setJobId(result.job_id)
-      writeConsolePrefs({ cwd, provider, sessionId })
-    } catch (cause) {
-      if (sessionId && cause instanceof DeviceRpcError && cause.status === 404) {
+      setCliMessage(cliSetupMessage(nextPing, queue[0]))
+      const mode = permissionMode || 'bypassPermissions'
+      let lastError = ''
+      for (const name of queue) {
         try {
-          const retry = await deviceRpc<{ job_id?: string }>(deviceId, phoneSecret, '/api/sessions/new', {
-            method: 'POST',
-            body: JSON.stringify({
-              prompt: text,
-              cwd: workingDir,
-              permission_mode: permissionMode || 'bypassPermissions',
-              provider: activeProvider,
-            }),
-          })
-          if (!retry.job_id) throw new Error('The daemon did not return a job id.')
+          let result: { job_id?: string }
+          if (sessionId && name === selected) {
+            result = await deviceRpc<{ job_id?: string }>(
+              deviceId,
+              phoneSecret,
+              `/api/sessions/${encodeURIComponent(sessionId)}/continue`,
+              { method: 'POST', body: JSON.stringify({ prompt: text, permission_mode: mode }) },
+            )
+          } else {
+            result = await deviceRpc<{ job_id?: string }>(deviceId, phoneSecret, '/api/sessions/new', {
+              method: 'POST',
+              body: JSON.stringify({
+                prompt: text,
+                cwd: workingDir,
+                permission_mode: mode,
+                provider: name,
+              }),
+            })
+          }
+          if (!result.job_id) throw new Error('The daemon did not return a job id.')
+          setProvider(name)
           setPrompt('')
-          setSessionId('')
           seqRef.current = 0
           setJob(null)
-          setJobId(retry.job_id)
-          writeConsolePrefs({ cwd, provider, sessionId: '' })
+          setJobId(result.job_id)
+          writeConsolePrefs({ cwd: workingDir, provider: name, sessionId: name === selected ? sessionId : '' })
+          if (name !== selected) setSessionId('')
           return
-        } catch (retryCause) {
-          setError(retryCause instanceof DeviceRpcError ? retryCause.message : 'Could not start a new session.')
-          return
+        } catch (cause) {
+          const message = cause instanceof DeviceRpcError ? cause.message : 'Could not send the prompt to the laptop.'
+          lastError = `${providerLabel(name)}: ${message}`
+          const missing = /failed to launch|not found|WinError 2|cannot find|missing/i.test(message)
+          if (!missing && !(cause instanceof DeviceRpcError && cause.status === 404)) {
+            setError(lastError)
+            return
+          }
         }
       }
-      setError(cause instanceof DeviceRpcError ? cause.message : 'Could not send the prompt to the laptop.')
+      setError(lastError || 'No installed CLI could start this prompt.')
     } finally {
       setSending(false)
     }

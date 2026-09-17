@@ -375,20 +375,9 @@ def install_antigravity():
     if binary.exists():
         return str(binary)
     print("Antigravity CLI not found. Installing agy...")
-    try:
-        if os.name == "nt":
-            script = Path(os.environ.get("TEMP") or ".") / ("agy-install-" + str(os.getpid()) + ".cmd")
-            script.write_bytes(fetch_bytes("https://antigravity.google/cli/install.cmd", timeout=30))
-            completed = subprocess.run(["cmd.exe", "/d", "/c", str(script)], timeout=180)
-            try:
-                script.unlink()
-            except OSError:
-                pass
-            found = which_cli("agy") or (str(binary) if binary.exists() else "")
-            if completed.returncode == 0 and found:
-                return found
-            print("Official Antigravity installer failed (Google updater DNS). Trying direct download...")
-        else:
+    print("Skipping antigravity.google/cli/install.cmd — that script dies on Cloud Run DNS.")
+    if os.name != "nt":
+        try:
             completed = subprocess.run(
                 ["bash", "-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"],
                 timeout=180,
@@ -396,8 +385,8 @@ def install_antigravity():
             found = which_cli("agy")
             if completed.returncode == 0 and found:
                 return found
-    except Exception as error:
-        print("Official Antigravity installer failed: " + str(error))
+        except Exception as error:
+            print("Official Antigravity installer failed: " + str(error))
     try:
         manifest = fetch_agy_manifest()
         url = str(manifest.get("url") or "")
@@ -535,6 +524,21 @@ def overlay_daemon():
         if needle not in init_text:
             fail("could not patch daemon providers")
         init.write_text(init_text.replace(needle, insert, 1), encoding="utf-8")
+    server = daemon / "server.py"
+    server_text = server.read_text(encoding="utf-8")
+    ping_old = "        if path == \\"/api/ping\\":"
+    ping_new = (
+        "        if path == \\"/api/ping\\":\\n"
+        "            try:\\n"
+        "                from .cli_launch import refresh_cli_bins\\n"
+        "                refresh_cli_bins(self.config)\\n"
+        "            except Exception:\\n"
+        "                pass"
+    )
+    if "refresh_cli_bins" not in server_text:
+        if ping_old not in server_text:
+            fail("could not patch daemon ping")
+        server.write_text(server_text.replace(ping_old, ping_new, 1), encoding="utf-8")
 
 
 def configure_daemon(found):
@@ -545,13 +549,10 @@ def configure_daemon(found):
         config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     except (OSError, ValueError):
         config = {}
-    preferred = ["antigravity", "claude", "cursor", "codex", "grok"]
-    names = [name for name in preferred if name in found]
+    names = ["antigravity", "claude", "cursor", "codex"]
     for name in found:
         if name not in names:
             names.append(name)
-    if not names:
-        names = ["antigravity"]
     config.update({
         "bind": "127.0.0.1",
         "port": DAEMON_PORT,
