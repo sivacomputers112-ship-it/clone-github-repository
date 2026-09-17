@@ -251,15 +251,32 @@ def which_cli(name):
     found = shutil.which(name) or shutil.which(name + ".cmd") or shutil.which(name + ".exe")
     if found:
         return found
+    if os.name == "nt":
+        try:
+            output = subprocess.check_output(["where", name], text=True, errors="ignore", timeout=10)
+            line = output.strip().splitlines()[0].strip() if output.strip() else ""
+            if line and Path(line).exists():
+                return line
+        except Exception:
+            pass
     home = Path.home()
     appdata = Path(os.environ.get("APPDATA") or (home / "AppData/Roaming"))
     local = Path(os.environ.get("LOCALAPPDATA") or (home / "AppData/Local"))
     candidates = [
         home / ".local/bin" / name,
+        home / ".local/bin" / (name + ".exe"),
+        home / ".cursor/bin" / name,
+        home / ".cursor/bin" / (name + ".exe"),
+        home / ".antigravity/bin" / name,
+        home / ".antigravity/bin" / (name + ".exe"),
         appdata / "npm" / (name + ".cmd"),
         appdata / "npm" / (name + ".exe"),
+        local / "agy/bin" / name,
+        local / "agy/bin" / (name + ".exe"),
         local / "Programs" / name / (name + ".exe"),
         local / "npm" / (name + ".cmd"),
+        Path("C:/Program Files/nodejs") / (name + ".cmd"),
+        Path("C:/Program Files/nodejs") / (name + ".exe"),
     ]
     for path in candidates:
         if path.exists():
@@ -283,10 +300,18 @@ def extra_path():
         except Exception:
             pass
     home = Path.home()
-    parts.append(str(home / ".local/bin"))
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        parts.append(str(Path(appdata) / "npm"))
+    appdata = Path(os.environ.get("APPDATA") or (home / "AppData/Roaming"))
+    local = Path(os.environ.get("LOCALAPPDATA") or (home / "AppData/Local"))
+    for path in (
+        appdata / "npm",
+        local / "agy/bin",
+        home / ".local/bin",
+        home / ".cursor/bin",
+        home / ".antigravity/bin",
+        Path("C:/Program Files/nodejs"),
+        Path("C:/Program Files (x86)/nodejs"),
+    ):
+        parts.append(str(path))
     return os.pathsep.join(part for part in parts if part)
 
 
@@ -318,11 +343,20 @@ def install_claude():
 
 def prepare_cli():
     found = {}
-    for name in ("claude", "codex", "grok"):
-        path = which_cli(name)
-        if path:
-            found[name] = path
-            print("Found " + name + " CLI: " + path)
+    specs = (
+        ("claude", ("claude",)),
+        ("antigravity", ("agy", "antigravity")),
+        ("cursor", ("agent", "cursor-agent")),
+        ("codex", ("codex",)),
+        ("grok", ("grok",)),
+    )
+    for name, aliases in specs:
+        for alias in aliases:
+            path = which_cli(alias)
+            if path:
+                found[name] = path
+                print("Found " + name + " CLI: " + path)
+                break
     if "claude" not in found:
         installed = install_claude()
         if installed:
@@ -330,12 +364,56 @@ def prepare_cli():
             print("Installed Claude Code CLI: " + installed)
     if not found:
         print("No coding CLI is available yet. Forge will still connect.")
-        print("After Claude Code is installed, run: claude login")
+        print("Install Claude Code, Cursor CLI, Antigravity, or Codex, then log in.")
     elif "claude" in found and not claude_logged_in():
         print("Claude CLI is installed but not logged in.")
         print("Open a new Command Prompt and run: claude login")
         print("Then return to the Forge tab and send a prompt.")
+    if "cursor" in found:
+        print("Cursor CLI found. If prompts fail, run: agent login")
+    if "antigravity" in found:
+        print("Antigravity CLI found. If prompts fail, run: agy")
+    if "codex" in found:
+        print("Codex CLI found. If prompts fail, run: codex login")
     return found
+
+
+def overlay_daemon():
+    daemon = AGENT_HOME / "daemon" / "agentremoted"
+    providers = daemon / "providers"
+    if not providers.is_dir():
+        fail("cloned daemon is missing providers")
+    download("/api/forge/cli_launch.py", daemon / "cli_launch.py")
+    download("/api/forge/cursor.py", providers / "cursor.py")
+    download("/api/forge/antigravity.py", providers / "antigravity.py")
+    jobs = daemon / "jobs.py"
+    text = jobs.read_text(encoding="utf-8")
+    old = "            proc = subprocess.Popen(cmd, **popen_kw)"
+    new = (
+        "            from .cli_launch import prepare_popen\\n"
+        "            cmd, popen_kw = prepare_popen(cmd, popen_kw)\\n"
+        "            proc = subprocess.Popen(cmd, **popen_kw)"
+    )
+    if "prepare_popen" not in text:
+        if old not in text:
+            fail("could not patch daemon job launcher")
+        jobs.write_text(text.replace(old, new, 1), encoding="utf-8")
+    init = providers / "__init__.py"
+    init_text = init.read_text(encoding="utf-8")
+    if "CursorRunner" not in init_text:
+        needle = "    if store is not None:"
+        insert = (
+            "    elif name in (\\"cursor\\", \\"agent\\"):\\n"
+            "        from .cursor import CursorRunner, CursorStore\\n"
+            "        store, runner = CursorStore(config), CursorRunner(config)\\n"
+            "    elif name in (\\"antigravity\\", \\"agy\\"):\\n"
+            "        from .antigravity import AntigravityRunner, AntigravityStore\\n"
+            "        store, runner = AntigravityStore(config), AntigravityRunner(config)\\n"
+            "    if store is not None:"
+        )
+        if needle not in init_text:
+            fail("could not patch daemon providers")
+        init.write_text(init_text.replace(needle, insert, 1), encoding="utf-8")
 
 
 def configure_daemon(found):
@@ -361,6 +439,10 @@ def configure_daemon(found):
         config["codex_bin"] = found["codex"]
     if found.get("grok"):
         config["grok_bin"] = found["grok"]
+    if found.get("cursor"):
+        config["cursor_bin"] = found["cursor"]
+    if found.get("antigravity"):
+        config["agy_bin"] = found["antigravity"]
     config_path.write_text(json.dumps(config, indent=2) + "\\n", encoding="utf-8")
 
 
@@ -514,6 +596,8 @@ def main():
     found = prepare_cli()
     print("Installing pinned local daemon...")
     install_daemon()
+    print("Wiring Claude, Cursor, Antigravity, and Codex launchers...")
+    overlay_daemon()
     configure_daemon(found)
     print("Claiming pairing code...")
     credentials = claim(code)

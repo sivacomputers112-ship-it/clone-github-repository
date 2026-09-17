@@ -184,7 +184,7 @@ export function PairingScreen() {
           Open this page. Run one command. Drive the laptop.
         </h1>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          No account and no inbound laptop port. The bridge makes one encrypted outbound connection.
+          Pairing finds Claude Code, Antigravity, Cursor, and Codex on the laptop and sends prompts to those CLIs. No inbound port.
         </p>
       </header>
 

@@ -119,16 +119,34 @@ export function pickReadyProvider(ping: PingResponse | null) {
   return installed || names[0] || ''
 }
 
+export function providerLabel(name: string) {
+  if (name === 'claude') return 'Claude Code'
+  if (name === 'cursor' || name === 'agent') return 'Cursor'
+  if (name === 'antigravity' || name === 'agy') return 'Antigravity'
+  if (name === 'codex') return 'Codex'
+  if (name === 'grok') return 'Grok'
+  return name
+}
+
+export function cliLoginCommand(name: string) {
+  if (name === 'cursor' || name === 'agent') return 'agent login'
+  if (name === 'antigravity' || name === 'agy') return 'agy'
+  if (name === 'codex') return 'codex login'
+  if (name === 'grok') return 'grok auth login'
+  return 'claude login'
+}
+
 export function cliSetupMessage(ping: PingResponse | null, provider: string) {
   const auth = providerAuth(ping, provider) || ping?.auth
   if (!auth) return ''
   const cli = auth.cli || provider || 'claude'
+  const login = cliLoginCommand(cli)
   if (auth.status === 'ok') return ''
   if (!auth.cli_on_path) {
-    return `${cli} is not installed on this laptop. Re-run the Forge install command, or install the CLI and run \`${cli} login\` in Command Prompt.`
+    return `${providerLabel(cli)} is not installed on this laptop. Re-run the Forge install command, or install the CLI and run \`${login}\` in Command Prompt.`
   }
   if (auth.status === 'missing' || auth.status === 'expired') {
-    return `On the laptop, open Command Prompt and run \`${cli} login\`. Then send a prompt here.`
+    return `On the laptop, open Command Prompt and run \`${login}\`. Then send a prompt here.`
   }
   return auth.detail || ''
 }

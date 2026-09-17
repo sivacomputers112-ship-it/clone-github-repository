@@ -17,6 +17,7 @@ import {
   optionLabel,
   pickReadyProvider,
   pingProviders,
+  providerLabel,
   questionLabel,
   type DaemonQuestion,
   type JobEvent,
@@ -222,7 +223,7 @@ export function ConsoleFrame() {
     }
     const activeProvider = provider || pickReadyProvider(ping)
     if (!activeProvider) {
-      setError('No coding CLI is available on this laptop yet. Re-run the install command, then run `claude login`.')
+      setError('No coding CLI is available on this laptop yet. Re-run the install command after Claude Code, Cursor, Antigravity, or Codex is installed.')
       return
     }
     setSending(true)
@@ -398,7 +399,7 @@ export function ConsoleFrame() {
       ? 'Bridge is connected, but the local agent daemon is not ready yet. Re-run the install command if this stays unavailable.'
       : cliMessage
         ? cliMessage
-        : 'Type a prompt and send it. The CLI on this laptop can work across the whole machine.'
+        : 'Type a prompt and send it. Forge launches Claude Code, Cursor, Antigravity, or Codex on this laptop.'
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -463,7 +464,7 @@ export function ConsoleFrame() {
             >
               {providers.map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {providerLabel(name)}
                 </option>
               ))}
             </select>
