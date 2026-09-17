@@ -205,7 +205,7 @@ export function PairingScreen() {
 
             {introStep === 1 ? (
               <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-                {cliOptions.map((cli) => <button key={cli.id} type="button" onClick={() => setSelectedCli(cli.id)} className={`group flex min-h-28 flex-col justify-between border-2 border-[#101313] p-3 text-left transition-transform hover:-translate-y-1 ${selectedCli === cli.id ? 'bg-[#b9ff3d] shadow-[4px_4px_0_#101313]' : 'bg-white/60'}`} aria-pressed={selectedCli === cli.id}><img src={cli.logo} alt="" className="size-9" /><span className="font-mono text-[11px] font-bold uppercase">{cli.name}</span></button>)}
+                {cliOptions.map((cli) => <button key={cli.id} type="button" onClick={() => { setSelectedCli(cli.id); setIntroStep(3) }} className={`group flex min-h-28 flex-col justify-between border-2 border-[#101313] p-3 text-left transition-transform hover:-translate-y-1 ${selectedCli === cli.id ? 'bg-[#b9ff3d] shadow-[4px_4px_0_#101313]' : 'bg-white/60'}`} aria-pressed={selectedCli === cli.id}><img src={cli.logo} alt="" className="size-9" /><span className="font-mono text-[11px] font-bold uppercase">{cli.name}</span></button>)}
               </div>
             ) : null}
 
