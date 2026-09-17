@@ -57,18 +57,19 @@ export function pythonInstallScript(origin: string) {
   return `#!/usr/bin/env python3
 from __future__ import annotations
 
-import json
-import os
-import platform
-import shutil
-import socket
-import subprocess
-import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from pathlib import Path
+	import hashlib
+	import json
+	import os
+	import platform
+	import shutil
+	import socket
+	import subprocess
+	import sys
+	import time
+	import urllib.error
+	import urllib.parse
+	import urllib.request
+	from pathlib import Path
 
 ORIGIN = ${JSON.stringify(safeOrigin)}
 DAEMON_REPOSITORY = "https://github.com/jxw1102/agent-remote.git"
@@ -303,11 +304,11 @@ def extra_path():
     appdata = Path(os.environ.get("APPDATA") or (home / "AppData/Roaming"))
     local = Path(os.environ.get("LOCALAPPDATA") or (home / "AppData/Local"))
     for path in (
-        appdata / "npm",
         local / "agy/bin",
         home / ".local/bin",
-        home / ".cursor/bin",
         home / ".antigravity/bin",
+        appdata / "npm",
+        home / ".cursor/bin",
         Path("C:/Program Files/nodejs"),
         Path("C:/Program Files (x86)/nodejs"),
     ):
@@ -323,6 +324,121 @@ def claude_logged_in():
         return True
     claude_json = Path.home() / ".claude.json"
     return claude_json.exists()
+
+
+def fetch_bytes(url, timeout=60):
+    request = urllib.request.Request(url, headers={"User-Agent": "forge-installer/1.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read()
+
+
+def agy_platform():
+    system = platform.system()
+    machine = (platform.machine() or "").lower()
+    if system == "Windows":
+        return "windows_arm64" if "arm" in machine else "windows_amd64"
+    arch = "arm64" if ("arm" in machine or "aarch64" in machine) else "amd64"
+    if system == "Darwin":
+        return "darwin_" + arch
+    return "linux_" + arch
+
+
+def fetch_agy_manifest():
+    name = agy_platform()
+    urls = [
+        ORIGIN + "/api/agy/manifest?platform=" + urllib.parse.quote(name),
+        "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/" + name + ".json",
+    ]
+    last_error = ""
+    for url in urls:
+        try:
+            data = json.loads(fetch_bytes(url, timeout=30).decode("utf-8"))
+            if data.get("url"):
+                return data
+        except Exception as error:
+            last_error = str(error)
+    raise RuntimeError(last_error or "no Antigravity manifest")
+
+
+def agy_binary_path():
+    if os.name == "nt":
+        local = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData/Local"))
+        return local / "agy" / "bin" / "agy.exe"
+    return Path.home() / ".local" / "bin" / "agy"
+
+
+def install_antigravity():
+    existing = which_cli("agy") or which_cli("antigravity")
+    if existing:
+        return existing
+    binary = agy_binary_path()
+    if binary.exists():
+        return str(binary)
+    print("Antigravity CLI not found. Installing agy...")
+    try:
+        if os.name == "nt":
+            script = Path(os.environ.get("TEMP") or ".") / ("agy-install-" + str(os.getpid()) + ".cmd")
+            script.write_bytes(fetch_bytes("https://antigravity.google/cli/install.cmd", timeout=30))
+            completed = subprocess.run(["cmd.exe", "/d", "/c", str(script)], timeout=180)
+            try:
+                script.unlink()
+            except OSError:
+                pass
+            found = which_cli("agy") or (str(binary) if binary.exists() else "")
+            if completed.returncode == 0 and found:
+                return found
+            print("Official Antigravity installer failed (Google updater DNS). Trying direct download...")
+        else:
+            completed = subprocess.run(
+                ["bash", "-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"],
+                timeout=180,
+            )
+            found = which_cli("agy")
+            if completed.returncode == 0 and found:
+                return found
+    except Exception as error:
+        print("Official Antigravity installer failed: " + str(error))
+    try:
+        manifest = fetch_agy_manifest()
+        url = str(manifest.get("url") or "")
+        sha = str(manifest.get("sha512") or "")
+        if not url:
+            raise RuntimeError("manifest missing url")
+        print("Downloading Antigravity " + str(manifest.get("version") or "") + " from Google storage...")
+        payload = fetch_bytes(url, timeout=180)
+        if sha:
+            digest = hashlib.sha512(payload).hexdigest()
+            if digest.lower() != sha.lower():
+                raise RuntimeError("Antigravity checksum mismatch")
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(payload)
+        if os.name != "nt":
+            binary.chmod(0o755)
+        try:
+            subprocess.run([str(binary), "install"], timeout=60, check=False)
+        except Exception:
+            pass
+        found = which_cli("agy") or str(binary)
+        print("Installed Antigravity CLI: " + found)
+        return found
+    except Exception as error:
+        print("Direct Antigravity download failed: " + str(error))
+    if os.name == "nt" and shutil.which("winget"):
+        try:
+            subprocess.run(
+                ["winget", "install", "-e", "--id", "Google.AntigravityCLI", "--accept-package-agreements", "--accept-source-agreements"],
+                timeout=180,
+                check=False,
+            )
+            found = which_cli("agy") or (str(binary) if binary.exists() else "")
+            if found:
+                return found
+        except Exception:
+            pass
+    print("Antigravity CLI could not be installed automatically.")
+    print("Do not run the installer from C:\\\\Windows\\\\System32.")
+    print("From a user folder run: curl -fsSL https://antigravity.google/cli/install.cmd -o %TEMP%\\\\agy-install.cmd && %TEMP%\\\\agy-install.cmd")
+    return ""
 
 
 def install_claude():
@@ -344,8 +460,8 @@ def install_claude():
 def prepare_cli():
     found = {}
     specs = (
-        ("claude", ("claude",)),
         ("antigravity", ("agy", "antigravity")),
+        ("claude", ("claude",)),
         ("cursor", ("agent", "cursor-agent")),
         ("codex", ("codex",)),
         ("grok", ("grok",)),
@@ -357,22 +473,27 @@ def prepare_cli():
                 found[name] = path
                 print("Found " + name + " CLI: " + path)
                 break
-    if "claude" not in found:
+    if "antigravity" not in found:
+        installed = install_antigravity()
+        if installed:
+            found["antigravity"] = installed
+            print("Using Antigravity CLI: " + installed)
+    if "antigravity" not in found and "claude" not in found:
         installed = install_claude()
         if installed:
             found["claude"] = installed
             print("Installed Claude Code CLI: " + installed)
     if not found:
         print("No coding CLI is available yet. Forge will still connect.")
-        print("Install Claude Code, Cursor CLI, Antigravity, or Codex, then log in.")
+        print("Install Antigravity (agy) or Claude Code, then log in.")
+    elif "antigravity" in found:
+        print("Antigravity is the default CLI. If prompts fail, open a new Command Prompt and run: agy")
     elif "claude" in found and not claude_logged_in():
         print("Claude CLI is installed but not logged in.")
         print("Open a new Command Prompt and run: claude login")
         print("Then return to the Forge tab and send a prompt.")
     if "cursor" in found:
         print("Cursor CLI found. If prompts fail, run: agent login")
-    if "antigravity" in found:
-        print("Antigravity CLI found. If prompts fail, run: agy")
     if "codex" in found:
         print("Codex CLI found. If prompts fail, run: codex login")
     return found
@@ -424,7 +545,13 @@ def configure_daemon(found):
         config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     except (OSError, ValueError):
         config = {}
-    names = list(found.keys()) or ["claude"]
+    preferred = ["antigravity", "claude", "cursor", "codex", "grok"]
+    names = [name for name in preferred if name in found]
+    for name in found:
+        if name not in names:
+            names.append(name)
+    if not names:
+        names = ["antigravity"]
     config.update({
         "bind": "127.0.0.1",
         "port": DAEMON_PORT,
@@ -596,7 +723,7 @@ def main():
     found = prepare_cli()
     print("Installing pinned local daemon...")
     install_daemon()
-    print("Wiring Claude, Cursor, Antigravity, and Codex launchers...")
+    print("Wiring Antigravity, Claude, Cursor, and Codex launchers...")
     overlay_daemon()
     configure_daemon(found)
     print("Claiming pairing code...")
@@ -622,8 +749,11 @@ def main():
         elif not wait_port(BRIDGE_LOCK_PORT, 25):
             start_processes(python)
     print("Forge is installed and connected. You can close this window.")
-    if not found:
-        print("Next: install Claude Code, run: claude login")
+    if "antigravity" in found:
+        print("Next: open a new Command Prompt and run: agy")
+        print("Finish the first-launch Google login, then send a prompt in Forge.")
+    elif not found:
+        print("Next: install Antigravity, or Claude Code and run: claude login")
     elif "claude" in found and not claude_logged_in():
         print("Next: open a new Command Prompt and run: claude login")
     print("Logs: " + str(FORGE_HOME / "bridge.log"))

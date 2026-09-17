@@ -113,10 +113,12 @@ export function providerAuth(ping: PingResponse | null, name: string): AuthHealt
 
 export function pickReadyProvider(ping: PingResponse | null) {
   const names = pingProviders(ping)
-  const ready = names.find((name) => providerAuth(ping, name)?.status === 'ok')
+  const preferred = ['antigravity', 'claude', 'cursor', 'codex', 'grok']
+  const ordered = [...preferred.filter((name) => names.includes(name)), ...names.filter((name) => !preferred.includes(name))]
+  const ready = ordered.find((name) => providerAuth(ping, name)?.status === 'ok')
   if (ready) return ready
-  const installed = names.find((name) => providerAuth(ping, name)?.cli_on_path)
-  return installed || names[0] || ''
+  const installed = ordered.find((name) => providerAuth(ping, name)?.cli_on_path)
+  return installed || ordered[0] || ''
 }
 
 export function providerLabel(name: string) {

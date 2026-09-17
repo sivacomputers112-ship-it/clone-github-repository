@@ -8,9 +8,9 @@ The Cloudflare Worker is already deployed. Do not redeploy it unless the worker 
 
 ## Status
 
-The installer finds Claude Code (`claude`), Antigravity (`agy`), Cursor (`agent`), and Codex (`codex`) on the laptop. After cloning Agent Remote it overlays a Windows launcher so `claude.cmd` no longer dies with WinError 2, and registers Cursor/Antigravity providers.
+The installer **defaults to Google Antigravity** (`agy`). Official `install.cmd` dies on many Windows machines because `antigravity-cli-auto-updater-974169037036.us-central1.run.app` does not resolve. Forge proxies that manifest and downloads the binary from `storage.googleapis.com` into `%LOCALAPPDATA%\\agy\\bin\\agy.exe`.
 
-If Claude Code is missing and npm is available, it installs `@anthropic-ai/claude-code`. If a CLI is present but not logged in, the console tells you the exact login command (`claude login`, `agent login`, `agy`, or `codex login`).
+If Antigravity cannot be installed, it falls back to Claude Code, then Cursor (`agent`) and Codex. After cloning Agent Remote it overlays a Windows launcher so `.cmd` shims no longer die with WinError 2.
 
 The console no longer requires picking a project. It defaults to the laptop home directory with **Full access** (`bypassPermissions`) so the CLI can work across the machine.
 
@@ -20,7 +20,8 @@ Done:
 - After the laptop is online, the pairing page opens `/console` automatically.
 - Console talks to the laptop daemon through `deviceRpc()` → `/d/<deviceId>/<path>` → the existing worker → the laptop bridge.
 - Re-running the install command replaces any leftover Forge process on that laptop.
-- Installer detects Claude Code, Antigravity, Cursor, and Codex and writes their absolute paths into `~/.agentremoted/config.json`.
+- Installer installs Antigravity first (official script, then Forge-proxied GCS binary if Cloud Run DNS fails), then Claude Code as fallback.
+- Detected CLI paths are written into `~/.agentremoted/config.json` with `provider=antigravity` when `agy` is present.
 - After cloning Agent Remote, the installer overlays a Windows CLI launcher (fixes `WinError 2` on `claude.cmd`) plus Cursor/Antigravity providers.
 - Console shows a login banner when the selected CLI is missing or not signed in.
 
@@ -28,10 +29,10 @@ Still on you:
 
 1. Open **https://clone-github-repository-olive.vercel.app**
 2. Click **New code**
-3. Copy the new command and paste it in Command Prompt
-4. Watch the installer print which CLIs it found. If it says to log in, open a **new** Command Prompt and run that command (`claude login`, `agent login`, `agy`, or `codex login`)
+3. Copy the new command and paste it in Command Prompt — **not** from `C:\\Windows\\System32`
+4. Watch it install `agy`. If it says to log in, open a **new** Command Prompt and run `agy`
 5. Wait until the page opens the console with **Online** and **Daemon ready**
-6. Pick the CLI in the header if more than one was found, type a prompt, and send
+6. Type a prompt and send. Antigravity is selected by default.
 
 If it still sits on Claimed, read `%USERPROFILE%\.forge\bridge.log` and `%USERPROFILE%\.forge\daemon.log`.
 

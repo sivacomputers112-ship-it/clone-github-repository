@@ -399,7 +399,7 @@ export function ConsoleFrame() {
       ? 'Bridge is connected, but the local agent daemon is not ready yet. Re-run the install command if this stays unavailable.'
       : cliMessage
         ? cliMessage
-        : 'Type a prompt and send it. Forge launches Claude Code, Cursor, Antigravity, or Codex on this laptop.'
+        : 'Type a prompt and send it. Forge launches Antigravity on this laptop first, then Claude Code, Cursor, or Codex if those are installed.'
 
   return (
     <div className="flex h-svh flex-col bg-background">

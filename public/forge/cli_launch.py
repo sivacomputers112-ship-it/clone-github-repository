@@ -192,12 +192,27 @@ def handle_stream_line(job, line):
         return
     kind = str(obj.get("type") or obj.get("event") or "")
     subtype = str(obj.get("subtype") or "")
-    if kind == "system" and subtype == "init":
-        session_id = str(obj.get("session_id") or "")
+    if kind == "init" or (kind == "system" and subtype == "init"):
+        init = obj.get("init") if isinstance(obj.get("init"), dict) else obj
+        session_id = str(obj.get("conversation_id") or obj.get("session_id") or "")
         if session_id:
             with job.lock:
                 job.new_session_id = session_id
-        job.add_event("init", session_id=session_id, model=str(obj.get("model") or ""))
+        model = ""
+        if isinstance(init, dict):
+            model = str(init.get("model") or obj.get("model") or "")
+        job.add_event("init", session_id=session_id, model=model)
+        return
+    if kind == "step_update":
+        step = obj.get("step_update") if isinstance(obj.get("step_update"), dict) else obj
+        delta = step.get("text_delta")
+        if isinstance(delta, str) and delta:
+            job.add_event("text", text=delta)
+        if str(step.get("step_type") or "") == "tool":
+            info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
+            name = str(step.get("tool_name") or info.get("name") or "tool")
+            detail = info.get("parameters") or info.get("output") or ""
+            job.add_event("tool", name=name, detail=str(detail)[:400])
         return
     if kind in ("assistant", "message", "text", "content"):
         extracted = _assistant_text(obj)
@@ -214,7 +229,18 @@ def handle_stream_line(job, line):
         return
     if kind in ("result", "done"):
         result = obj.get("result")
-        if isinstance(result, str) and result.strip():
+        if isinstance(result, dict):
+            response = result.get("response")
+            error = result.get("error")
+            if result.get("status") == "ERROR" and error:
+                job.add_event("error", text=str(error)[:2000])
+            elif isinstance(response, str) and response.strip():
+                job.add_event("text", text=response)
+            session_id = str(result.get("conversation_id") or "")
+            if session_id:
+                with job.lock:
+                    job.new_session_id = session_id
+        elif isinstance(result, str) and result.strip():
             job.add_event("text", text=result)
         return
 
