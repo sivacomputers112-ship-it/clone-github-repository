@@ -406,7 +406,7 @@ export function ConsoleFrame() {
         : 'Type a prompt and send it. Forge launches Antigravity on this laptop first, then Claude Code, Cursor, or Codex if those are installed.'
 
   return (
-    <div className="flex h-svh flex-col bg-background">
+    <div className="forge-console flex h-svh flex-col bg-background">
       <header className="flex items-center justify-between gap-3 border-b border-foreground/10 px-4 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/" className="shrink-0 font-mono text-[11px] tracking-[0.28em] text-muted-foreground">
