@@ -39,6 +39,17 @@ export function PairingScreen() {
   const [copied, setCopied] = useState(false)
   const [appOrigin, setAppOrigin] = useState('')
   const [platform, setPlatform] = useState<LaptopPlatform>('unix')
+  const [introStep, setIntroStep] = useState(0)
+  const [selectedCli, setSelectedCli] = useState('antigravity')
+
+  const cliOptions = [
+    { id: 'antigravity', name: 'Antigravity', logo: '/logos/antigravity.svg', tone: 'lime' },
+    { id: 'claude', name: 'Claude Code', logo: '/logos/claude-code.svg', tone: 'cyan' },
+    { id: 'cursor', name: 'Cursor', logo: '/logos/cursor.svg', tone: 'blue' },
+    { id: 'codex', name: 'Codex', logo: '/logos/codex.svg', tone: 'pink' },
+  ] as const
+
+  const chosenCli = cliOptions.find((cli) => cli.id === selectedCli) ?? cliOptions[0]!
 
   useEffect(() => {
     setAppOrigin(APP_ORIGIN_OVERRIDE)
@@ -177,108 +188,62 @@ export function PairingScreen() {
   const privateOrigin = Boolean(appOrigin) && isPrivateHost(originHost(appOrigin))
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-xl flex-col justify-center gap-8 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <p className="font-mono text-[11px] tracking-[0.28em] text-muted-foreground">FORGE</p>
-        <h1 className="text-pretty text-3xl font-medium tracking-tight">
-          Open this page. Run one command. Drive the laptop.
-        </h1>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Pairing installs Google Antigravity (`agy`) on the laptop by default, then can use Claude Code, Cursor, or Codex. No inbound port.
-        </p>
-      </header>
+    <main className="forge-shell min-h-svh overflow-hidden px-4 py-4 text-[#101313] sm:px-8 sm:py-6">
+      <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-6xl flex-col border-[3px] border-[#101313] bg-[#f3f0e8] shadow-[10px_10px_0_#101313]">
+        <header className="flex items-center justify-between border-b-[3px] border-[#101313] px-5 py-4 sm:px-8">
+          <div className="flex items-center gap-3"><span className="grid size-8 place-items-center border-2 border-[#101313] bg-[#b9ff3d] font-mono text-sm font-bold">F/</span><span className="font-mono text-xs font-bold tracking-[0.3em]">FORGE_REMOTE</span></div>
+          <div className="hidden items-center gap-5 font-mono text-[10px] uppercase tracking-[0.18em] sm:flex"><span>v0.4.0</span><span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[#b9ff3d] ring-2 ring-[#101313]" />Encrypted link</span></div>
+        </header>
 
-      <section className="flex flex-col gap-4 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs tracking-wide text-muted-foreground uppercase">Pairing code</p>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={status} />
-            {status !== 'loading' ? (
-              <Button size="sm" variant="ghost" onClick={() => void resetPairing()}>
-                New code
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <p className="font-mono text-3xl tracking-[0.14em] sm:text-4xl">{session?.code || '————-————'}</p>
-        <p className="text-xs text-muted-foreground">Expires in 10 minutes if unused. Each code works once.</p>
-      </section>
-
-      {privateOrigin ? (
-        <Alert variant="destructive">
-          <TriangleAlertIcon />
-          <AlertTitle>Publish before installing</AlertTitle>
-          <AlertDescription>
-            Laptop installers cannot access a private v0 preview. Publish this project to a public HTTPS URL first.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs tracking-wide text-muted-foreground uppercase">Laptop command</p>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg bg-muted p-1" aria-label="Laptop operating system">
-              <Button size="sm" variant={platform === 'windows' ? 'secondary' : 'ghost'} onClick={() => setPlatform('windows')} aria-pressed={platform === 'windows'}>
-                Windows CMD
-              </Button>
-              <Button size="sm" variant={platform === 'unix' ? 'secondary' : 'ghost'} onClick={() => setPlatform('unix')} aria-pressed={platform === 'unix'}>
-                macOS / Linux
-              </Button>
+        <div className="grid flex-1 lg:grid-cols-[1fr_1.1fr]">
+          <section className="flex flex-col justify-between border-b-[3px] border-[#101313] p-6 sm:p-10 lg:border-b-0 lg:border-r-[3px]">
+            <div>
+              <p className="mb-4 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-[#16a6c8]">{introStep === 0 ? '01 / wake the machine' : introStep === 1 ? '02 / choose your driver' : '03 / make the connection'}</p>
+              <h1 className="max-w-xl text-4xl font-black leading-[0.95] tracking-[-0.06em] sm:text-6xl">Your computer,<br /><span className="text-[#16a6c8]">in your pocket.</span></h1>
+              <p className="mt-6 max-w-md font-mono text-sm leading-6">Forge is a remote control for the coding tools already living on your machine. Private by design. Built for the long run.</p>
             </div>
-            <Button size="sm" variant="outline" onClick={copyCommand} disabled={!command || privateOrigin}>
-              {copied ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
+
+            {introStep === 1 ? (
+              <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+                {cliOptions.map((cli) => <button key={cli.id} type="button" onClick={() => setSelectedCli(cli.id)} className={`group flex min-h-28 flex-col justify-between border-2 border-[#101313] p-3 text-left transition-transform hover:-translate-y-1 ${selectedCli === cli.id ? 'bg-[#b9ff3d] shadow-[4px_4px_0_#101313]' : 'bg-white/60'}`} aria-pressed={selectedCli === cli.id}><img src={cli.logo} alt="" className="size-9" /><span className="font-mono text-[11px] font-bold uppercase">{cli.name}</span></button>)}
+              </div>
+            ) : null}
+
+            <div className="mt-10 flex items-center gap-3 border-t-2 border-[#101313] pt-5">
+              {introStep === 0 ? <Button type="button" onClick={() => setIntroStep(1)} className="h-12 rounded-none border-2 border-[#101313] bg-[#101313] px-6 font-mono text-xs font-bold uppercase tracking-[0.12em] text-white shadow-[4px_4px_0_#16a6c8] hover:bg-[#101313]/90">Slide computer to continue</Button> : introStep === 1 ? <span className="font-mono text-xs font-bold uppercase">Click the glowing mouse to continue <span className="text-[#16a6c8]">●</span></span> : <span className="font-mono text-xs font-bold uppercase">Pairing station ready <span className="text-[#16a6c8]">●</span></span>}
+              {introStep === 1 ? <button type="button" onClick={() => setIntroStep(0)} className="font-mono text-xs underline underline-offset-4">Back</button> : null}
+            </div>
+          </section>
+
+          <section className="flex flex-col justify-center bg-[#d8d2c5] p-5 sm:p-10">
+            <PixelComputer step={introStep} onMouseClick={() => introStep === 1 && setIntroStep(2)} />
+            {introStep === 2 ? <div className="mt-6 border-2 border-[#101313] bg-[#f3f0e8] p-4"><div className="mb-3 flex items-center justify-between"><span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em]">Pairing code</span><StatusBadge status={status} /></div><p className="font-mono text-3xl font-black tracking-[0.14em] sm:text-4xl">{session?.code || '————-————'}</p><p className="mt-2 font-mono text-[11px] leading-5">Run the command on your laptop. This code expires in 10 minutes.</p></div> : <div className="mt-6 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase"><span className="border-2 border-[#101313] bg-[#f3f0e8] p-3">Private<br /><b>by default</b></span><span className="border-2 border-[#101313] bg-[#f3f0e8] p-3">Live<br /><b>terminal</b></span><span className="border-2 border-[#101313] bg-[#f3f0e8] p-3">Zero<br /><b>signup</b></span></div>}
+          </section>
         </div>
-        <pre className="overflow-x-auto rounded-xl bg-card p-4 font-mono text-[12px] leading-relaxed text-foreground ring-1 ring-foreground/10">
-          <code>{command || 'Creating pairing code…'}</code>
-        </pre>
-        <p className="text-xs text-muted-foreground">
-          The laptop command always uses {PUBLISHED_APP_ORIGIN.replace('https://', '')} so install and claim work from a public HTTPS origin.
-        </p>
-      </section>
 
-      <ol className="flex flex-col gap-0">
-        <Step n={1} done={Boolean(session?.code)}>Keep this tab open</Step>
-        <Step n={2} done={copied || status === 'claimed' || connected} active={status === 'waiting' && !copied}>Copy the command</Step>
-        <Step n={3} done={status === 'claimed' || connected} active={status === 'waiting'}>
-          {platform === 'windows' ? 'Paste it in Command Prompt (cmd.exe)' : 'Paste it in a laptop terminal'}
-        </Step>
-        <Step n={4} done={connected} active={status === 'claimed' || status === 'waiting'} highlight>
-          {connected
-            ? `Laptop online${session?.hostname ? ` · ${session.hostname}` : ''}`
-            : status === 'claimed'
-              ? 'Code claimed — starting the laptop bridge'
-              : 'The laptop will connect outbound automatically'}
-        </Step>
-      </ol>
-
-      {status === 'error' ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {connected ? (
-        <div className="flex flex-col gap-3">
-          <Button size="lg" onClick={() => router.push('/console')}>
-            <LaptopIcon data-icon="inline-start" />
-            Open console
-          </Button>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              {session?.daemonOnline ? 'Bridge and local daemon are ready.' : 'Bridge connected; the local daemon is still starting.'}
-            </p>
-            <Button size="sm" variant="ghost" onClick={() => void resetPairing()}>Remove laptop</Button>
-          </div>
-        </div>
-      ) : (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          {status === 'waiting' || status === 'claimed' ? <Spinner /> : <TerminalIcon />}
-          {status === 'claimed'
-            ? 'Keep this tab open. The latest install on this laptop replaces any old Forge process.'
-            : 'Waiting for the laptop to claim this code.'}
-        </p>
-      )}
+        {introStep === 2 ? <section className="border-t-[3px] border-[#101313] bg-[#f3f0e8] p-5 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em]">Install on laptop · {chosenCli.name} selected</p><p className="mt-2 font-mono text-xs text-black/60">{platform === 'windows' ? 'Windows Command Prompt' : 'macOS / Linux terminal'}</p></div><div className="flex gap-2"><Button size="sm" variant={platform === 'windows' ? 'secondary' : 'ghost'} onClick={() => setPlatform('windows')}>Windows</Button><Button size="sm" variant={platform === 'unix' ? 'secondary' : 'ghost'} onClick={() => setPlatform('unix')}>macOS / Linux</Button><Button size="sm" variant="outline" onClick={copyCommand} disabled={!command || privateOrigin}>{copied ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}{copied ? 'Copied' : 'Copy command'}</Button></div></div><pre className="mt-4 overflow-x-auto border-2 border-[#101313] bg-[#101313] p-4 font-mono text-[11px] leading-6 text-[#b9ff3d]"><code>{command || 'Creating pairing code...'}</code></pre>{privateOrigin ? <Alert variant="destructive" className="mt-4 rounded-none"><TriangleAlertIcon /><AlertTitle>Publish before installing</AlertTitle><AlertDescription>Laptop installers need a public HTTPS URL.</AlertDescription></Alert> : null}<div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="flex items-center gap-2 font-mono text-xs">{connected ? <><span className="size-2 rounded-full bg-[#b9ff3d] ring-2 ring-[#101313]" />{session?.hostname || 'Laptop online'}</> : status === 'claimed' ? <><Spinner />Starting bridge...</> : <><TerminalIcon className="size-4" />Waiting for laptop to claim code</>}</p>{connected ? <Button onClick={() => router.push('/console')} className="h-11 rounded-none border-2 border-[#101313] bg-[#b9ff3d] font-mono text-xs font-bold uppercase text-[#101313] shadow-[4px_4px_0_#101313]"><LaptopIcon data-icon="inline-start" />Open console</Button> : <Button variant="ghost" onClick={() => setIntroStep(1)}>Change CLI</Button>}</div>{status === 'error' ? <p className="mt-3 font-mono text-xs text-red-700">{error}</p> : null}</section> : null}
+      </div>
     </main>
+  )
+}
+
+function PixelComputer({ step, onMouseClick }: { step: number; onMouseClick: () => void }) {
+  return (
+    <div className="pixel-stage" aria-label="Pixel art computer onboarding illustration">
+      <div className="pixel-stars" aria-hidden="true">✦　·　✧　·　✦</div>
+      <div className={`pixel-monitor ${step === 0 ? 'pixel-monitor-active' : ''}`}>
+        <div className="pixel-screen">
+          <div className="pixel-screen-grid" />
+          {step === 0 ? <><div className="pixel-window"><span /> <span /> <span /></div><div className="pixel-prompt">CLICK TO BOOT_</div></> : step === 1 ? <><div className="pixel-terminal-line">SELECT YOUR DRIVER</div><div className="pixel-cli-mark">{step === 1 ? 'FORGE / CLI' : ''}</div></> : <><div className="pixel-terminal-line">LINK READY</div><div className="pixel-code-line">{`> ${'pair --secure'}`}</div></>}
+        </div>
+        <div className="pixel-monitor-controls"><span /><span /><span /></div>
++      </div>
+      <div className="pixel-monitor-neck" />
+      <div className="pixel-monitor-base" />
+      <div className="pixel-keyboard"><span /><span /><span /><span /><span /><span /><span /><span /></div>
+      <button type="button" onClick={onMouseClick} aria-label="Click glowing mouse to continue" className={`pixel-mouse ${step === 1 ? 'pixel-mouse-active' : ''}`}><span /></button>
+      <p className="pixel-caption">{step === 0 ? 'click / slide computer to continue' : step === 1 ? 'choose the cli that lives on your machine' : 'click the mouse to open your secure link'}</p>
+    </div>
   )
 }
 
