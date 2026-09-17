@@ -230,20 +230,13 @@ export function PairingScreen() {
 
 function PixelComputer({ step, selectedCli, cliOptions, onSelectCli, onMouseClick }: { step: number; selectedCli: string; cliOptions: readonly { id: string; name: string; logo: string; tone: string }[]; onSelectCli: (id: string) => void; onMouseClick: () => void }) {
   return (
-    <div className="pixel-stage" aria-label="Pixel art computer onboarding illustration">
-      <div className="pixel-stars" aria-hidden="true">✦　·　✧　·　✦</div>
-      <div className={`pixel-monitor ${step === 0 ? 'pixel-monitor-active' : ''}`}>
-        <div className="pixel-screen">
-          <div className="pixel-screen-grid" />
-          {step === 0 ? <><div className="pixel-window"><span /> <span /> <span /></div><div className="pixel-prompt">CLICK TO BOOT_</div></> : step === 1 ? <><div className="pixel-terminal-line">CLICK A DRIVER</div><div className="pixel-logo-grid">{cliOptions.map((cli) => <button type="button" key={cli.id} onClick={() => onSelectCli(cli.id)} className={`pixel-logo-button ${selectedCli === cli.id ? 'pixel-logo-selected' : ''}`}><img src={cli.logo} alt="" /><small>{cli.name}</small></button>)}</div></> : step === 2 ? <><div className="pixel-terminal-line">CHECK BEFORE LINK</div><div className="pixel-cli-mark">{selectedCli.toUpperCase()}</div></> : <><div className="pixel-terminal-line">LINK READY</div><div className="pixel-code-line">{`> ${'pair --secure'}`}</div></>}
-        </div>
-        <div className="pixel-monitor-controls"><span /><span /><span /></div>
+    <div className="pixel-stage pixel-reference-stage" aria-label="Retro pixel art computer onboarding illustration">
+      <img className="pixel-reference-image" src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-wEtKxtgVd09UHOxpcSHqArilRaONsu.png" alt="Pixel art retro computer with monitor, keyboard, and mouse" />
+      <div className="pixel-reference-screen">
+        {step === 0 ? <><div className="pixel-reference-error">.error.</div><span className="pixel-reference-hint">click to boot</span></> : step === 1 ? <><span className="pixel-reference-title">select cli</span><div className="pixel-reference-logos">{cliOptions.map((cli) => <button type="button" key={cli.id} onClick={() => onSelectCli(cli.id)} className={`pixel-reference-logo ${selectedCli === cli.id ? 'pixel-reference-logo-selected' : ''}`}><img src={cli.logo} alt="" /><small>{cli.name}</small></button>)}</div></> : <><span className="pixel-reference-title">{step === 2 ? 'check link' : 'link ready'}</span><span className="pixel-reference-command">&gt; {step === 2 ? selectedCli : 'pair --secure'}</span></>}
       </div>
-      <div className="pixel-monitor-neck" />
-      <div className="pixel-monitor-base" />
-      <div className="pixel-keyboard"><span /><span /><span /><span /><span /><span /><span /><span /></div>
-      <button type="button" onClick={onMouseClick} aria-label="Click glowing mouse to continue" className={`pixel-mouse ${step === 1 ? 'pixel-mouse-active' : ''}`}><span /></button>
-      <p className="pixel-caption">{step === 0 ? 'click / slide computer to continue' : step === 1 ? 'choose the cli that lives on your machine' : 'click the mouse to open your secure link'}</p>
+      <button type="button" onClick={onMouseClick} aria-label="Click glowing mouse to continue" className={`pixel-reference-mouse ${step === 1 ? 'pixel-mouse-active' : ''}`} />
+      <p className="pixel-caption">{step === 0 ? 'click / slide computer to continue' : step === 1 ? 'click a cli on the screen' : 'your secure link is ready'}</p>
     </div>
   )
 }
